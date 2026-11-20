@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CASH
+  BANK
+  EWALLET
+  INVESTMENT
+  EMERGENCY_FUND
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+  DEBT_PAYMENT
+}
+
+enum ExpenseClass {
+  ESSENTIAL
+  DISCRETIONARY
+}
+
+enum InterestType {
+  FLAT
+  EFFECTIVE
+}
+
+enum BudgetFramework {
+  ZERO_BASED
+  RULE_50_30_20
+}
+
+enum HealthStatus {
+  NORMAL
+  RECOVERY_MODE
+}
+
+model User {
+  id                  String          @id @default(uuid())
+  email               String          @unique
+  passwordHash        String
+  name                String
+  createdAt           DateTime        @default(now())
+
+  onboardingCompleted Boolean         @default(false)
+  baselineEssential   Decimal         @default(0) @db.Decimal(15, 2)
+  budgetFramework     BudgetFramework @default(ZERO_BASED)
+  swrRate             Decimal         @default(4.00) @db.Decimal(5, 2)
+  inflationRate       Decimal         @default(4.50) @db.Decimal(5, 2)
+  expectedReturnRate  Decimal         @default(10.00) @db.Decimal(5, 2)
+
+  currentLevel        Int             @default(1)
+  highestLevel        Int             @default(1)
+  healthStatus        HealthStatus    @default(NORMAL)
+
+  accounts            Account[]
+  categories          Category[]
+  transactions        Transaction[]
+  debts               Debt[]
+  budgets             Budget[]
+  netWorthSnapshots   NetWorthSnapshot[]
+}
+
+model Account {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  type         AccountType
+  balance      Decimal       @default(0) @db.Decimal(15, 2)
+  isLiquid     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+
+  outgoingTx   Transaction[] @relation("SourceAccount")
+  incomingTx   Transaction[] @relation("DestinationAccount")
+}
+
+model Category {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  expenseClass ExpenseClass?
+  isSystem     Boolean       @default(false)
+
+  transactions Transaction[]
+  budgets      Budget[]
+}
+
+model Transaction {
+  id                   String          @id @default(uuid())
+  userId               String
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type                 TransactionType
+  amount               Decimal         @db.Decimal(15, 2)
+  transactionDate      DateTime        @default(now())
+  note                 String?
+
+  sourceAccountId      String
+  sourceAccount        Account         @relation("SourceAccount", fields: [sourceAccountId], references: [id])
+  destinationAccountId String?
+  destinationAccount   Account?        @relation("DestinationAccount", fields: [destinationAccountId], references: [id])
+  categoryId           String?
+  category             Category?       @relation(fields: [categoryId], references: [id])
+
+  debtId               String?
+  debt                 Debt?           @relation(fields: [debtId], references: [id])
+  principalPaid        Decimal?        @db.Decimal(15, 2)
+  interestPaid         Decimal?        @db.Decimal(15, 2)
+
+  deletedAt            DateTime?
+  createdAt            DateTime        @default(now())
+
+  @@index([userId, transactionDate])
+  @@index([userId, type, deletedAt])
+}
+
+model Debt {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  isConsumptive     Boolean       @default(true)
+  totalPrincipal    Decimal       @db.Decimal(15, 2)
+  remainingBalance  Decimal       @db.Decimal(15, 2)
+  annualInterestPct Decimal       @default(0) @db.Decimal(5, 2)
+  interestType      InterestType  @default(FLAT)
+  minimumMonthlyPay Decimal       @db.Decimal(15, 2)
+  dueDateDay        Int?
+  isPaidOff         Boolean       @default(false)
+
+  payments          Transaction[]
+}
+
+model Budget {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+  month      Int
+  year       Int
+  allocated  Decimal  @db.Decimal(15, 2)
+
+  @@unique([userId, categoryId, month, year])
+}
+
+model NetWorthSnapshot {
+  id               String   @id @default(uuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshotMonth    Int
+  snapshotYear     Int
+  totalAssets      Decimal  @db.Decimal(15, 2)
+  totalLiabilities Decimal  @db.Decimal(15, 2)
+  netWorth         Decimal  @db.Decimal(15, 2)
+  savingRatePct    Decimal  @db.Decimal(5, 2)
+  createdAt        DateTime @default(now())
+
+  @@unique([userId, snapshotMonth, snapshotYear])
+}
