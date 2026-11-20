@@ -40,7 +40,7 @@ export const initialDebtSchema = z
   });
 
 export const onboardingSchema = z.object({
-  baselineEssential: nonNegativeMoney,
+  baselineEssential: positiveMoney,
   budgetFramework: budgetFrameworkSchema.default('ZERO_BASED'),
   accounts: z
     .array(initialAccountSchema, { error: 'Daftar akun awal wajib diisi.' })

@@ -100,13 +100,52 @@ export const transactionIdParamSchema = z.object({
   id: uuid('ID transaksi'),
 });
 
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Returns true only when year-month-day is a real calendar date (rejects e.g. 2026-02-31). */
+function isRealCalendarDate(year: number, month: number, day: number): boolean {
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+}
+
+/**
+ * Parses a query-string date filter.
+ * - `YYYY-MM-DD` is interpreted in WIB (+07:00): start-of-day for `start`, end-of-day for `end`.
+ * - Any other value is treated as a full ISO-8601 timestamp and passed through unchanged.
+ */
+export function parseFilterDate(boundary: 'start' | 'end', errorMessage: string) {
+  return z
+    .string({ error: errorMessage })
+    .trim()
+    .transform((value, ctx): Date => {
+      const fail = (): Date => {
+        ctx.issues.push({ code: 'custom', message: errorMessage, input: value });
+        return z.NEVER;
+      };
+
+      const dateOnly = DATE_ONLY_PATTERN.exec(value);
+      if (dateOnly) {
+        const [, yearText = '', monthText = '', dayText = ''] = dateOnly;
+        if (!isRealCalendarDate(Number(yearText), Number(monthText), Number(dayText))) {
+          return fail();
+        }
+        const time = boundary === 'start' ? 'T00:00:00.000+07:00' : 'T23:59:59.999+07:00';
+        const date = new Date(`${value}${time}`);
+        return Number.isNaN(date.getTime()) ? fail() : date;
+      }
+
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? fail() : date;
+    });
+}
+
 export const listTransactionsQuerySchema = z
   .object({
     type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER', 'DEBT_PAYMENT'], { error: 'Jenis transaksi tidak valid.' }).optional(),
     accountId: uuid('Akun').optional(),
     categoryId: uuid('Kategori').optional(),
-    from: z.coerce.date({ error: 'Tanggal awal tidak valid.' }).optional(),
-    to: z.coerce.date({ error: 'Tanggal akhir tidak valid.' }).optional(),
+    from: parseFilterDate('start', 'Tanggal awal tidak valid.').optional(),
+    to: parseFilterDate('end', 'Tanggal akhir tidak valid.').optional(),
     page: z.coerce.number({ error: 'Halaman harus berupa angka.' }).int().min(1, 'Halaman minimal 1.').default(1),
     pageSize: z.coerce
       .number({ error: 'Ukuran halaman harus berupa angka.' })

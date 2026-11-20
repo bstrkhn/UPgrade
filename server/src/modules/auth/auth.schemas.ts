@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { nonNegativeMoney, percentageRate } from '../../utils/money.js';
+import { percentageRate, positiveMoney } from '../../utils/money.js';
 
 const passwordSchema = z
   .string({ error: 'Kata sandi wajib diisi.' })
@@ -45,7 +45,7 @@ export const updatePreferencesSchema = z
     swrRate: positiveRate.optional(),
     inflationRate: percentageRate.optional(),
     expectedReturnRate: percentageRate.optional(),
-    baselineEssential: nonNegativeMoney.optional(),
+    baselineEssential: positiveMoney.optional(),
   })
   .refine((value) => Object.values(value).some((field) => field !== undefined), {
     message: 'Minimal satu pengaturan harus diubah.',

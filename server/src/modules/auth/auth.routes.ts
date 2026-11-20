@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authCookie, clearAuthCookie, setAuthCookie } from '../../middlewares/authCookie.js';
+import { authRateLimiter } from '../../middlewares/rateLimiter.js';
 import { validateZod } from '../../middlewares/validateZod.js';
 import { requireUserId } from '../../utils/requestUser.js';
 import { sendSuccess } from '../../utils/response.js';
@@ -14,13 +15,13 @@ import {
 
 export const authRouter = Router();
 
-authRouter.post('/register', validateZod({ body: registerSchema }), async (req, res) => {
+authRouter.post('/register', authRateLimiter, validateZod({ body: registerSchema }), async (req, res) => {
   const user = await registerUser(req.body);
   setAuthCookie(res, user.id);
   sendSuccess(res, 'Pendaftaran berhasil. Selamat datang di UPgrade!', { user: toPublicUser(user) }, { status: 201 });
 });
 
-authRouter.post('/login', validateZod({ body: loginSchema }), async (req, res) => {
+authRouter.post('/login', authRateLimiter, validateZod({ body: loginSchema }), async (req, res) => {
   const user = await loginUser(req.body);
   setAuthCookie(res, user.id);
   sendSuccess(res, 'Berhasil masuk.', { user: toPublicUser(user) });
