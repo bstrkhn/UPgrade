@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Filter, Plus, ReceiptText, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccounts } from '../api/hooks/useAccounts';
 import { useCategories } from '../api/hooks/useCategories';
 import { useTransactions } from '../api/hooks/useTransactions';
@@ -40,6 +40,12 @@ export function TransactionsPage() {
   const categories = categoriesQuery.data ?? [];
   const transactions = transactionsQuery.data?.transactions ?? [];
   const meta = transactionsQuery.data?.meta ?? { page: 1, pageSize, total: 0, totalPages: 1 };
+
+  useEffect(() => {
+    if (transactionsQuery.data && page > transactionsQuery.data.meta.totalPages) {
+      setPage(transactionsQuery.data.meta.totalPages);
+    }
+  }, [transactionsQuery.data, page]);
 
   const hasActiveFilter = Boolean(typeFilter || accountIdFilter || categoryIdFilter || fromDate || toDate);
 

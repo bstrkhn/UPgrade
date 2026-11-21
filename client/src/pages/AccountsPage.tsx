@@ -8,6 +8,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { Modal } from '../components/common/Modal';
 import { MoneyInput } from '../components/common/MoneyInput';
 import { useToast } from '../context/ToastContext';
+import { ACCOUNT_TYPE_LABELS } from '../utils/constants';
 import {
   finalizeMoneyInput,
   formatRupiah,
@@ -15,7 +16,6 @@ import {
   isValidNonNegativeMoney,
   sumMoney,
 } from '../utils/currency';
-import { ACCOUNT_TYPE_LABELS } from './DashboardPage';
 
 const CATEGORY_SECTIONS: Array<{
   kind: CategoryKind;
@@ -33,7 +33,7 @@ const CATEGORY_SECTIONS: Array<{
     kind: 'DISCRETIONARY',
     title: 'Pengeluaran Keinginan',
     subtitle: 'Gaya hidup, hiburan, dan audit Latte Factor',
-    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800',
+    badgeClass: 'border-rose-200 bg-rose-50 text-rose-700',
   },
   {
     kind: 'INCOME',

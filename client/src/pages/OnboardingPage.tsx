@@ -56,6 +56,7 @@ interface DraftDebt {
   isConsumptive: boolean;
   totalPrincipal: string;
   remainingBalance: string;
+  remainingTouched: boolean;
   minimumMonthlyPay: string;
   annualInterestPct: string;
   interestType: InterestType;
@@ -553,6 +554,7 @@ export function OnboardingPage() {
                           isConsumptive: true,
                           totalPrincipal: '',
                           remainingBalance: '',
+                          remainingTouched: false,
                           minimumMonthlyPay: '0',
                           annualInterestPct: '0',
                           interestType: 'FLAT',
@@ -629,7 +631,7 @@ export function OnboardingPage() {
                                   ? {
                                       ...item,
                                       totalPrincipal: val,
-                                      remainingBalance: item.remainingBalance || val,
+                                      remainingBalance: item.remainingTouched ? item.remainingBalance : val,
                                     }
                                   : item,
                               ),
@@ -643,7 +645,11 @@ export function OnboardingPage() {
                           value={debt.remainingBalance}
                           onChange={(val) =>
                             setDebts((prev) =>
-                              prev.map((item) => (item.key === debt.key ? { ...item, remainingBalance: val } : item)),
+                              prev.map((item) =>
+                                item.key === debt.key
+                                  ? { ...item, remainingBalance: val, remainingTouched: true }
+                                  : item,
+                              ),
                             )
                           }
                           placeholder="Contoh: 1500000"
@@ -712,6 +718,7 @@ export function OnboardingPage() {
                           isConsumptive: true,
                           totalPrincipal: '',
                           remainingBalance: '',
+                          remainingTouched: false,
                           minimumMonthlyPay: '0',
                           annualInterestPct: '0',
                           interestType: 'FLAT',

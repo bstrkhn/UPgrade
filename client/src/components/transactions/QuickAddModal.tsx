@@ -73,13 +73,6 @@ export function QuickAddModal() {
   const { isOpen, initialTab, closeQuickAdd } = useQuickAdd();
   const { showToast } = useToast();
 
-  const currentPeriod = useMemo(() => getCurrentWibPeriod(), []);
-  const accountsQuery = useAccounts(isOpen);
-  const categoriesQuery = useCategories(undefined, isOpen);
-  const activeDebtsQuery = useDebts(true, isOpen);
-  const summaryQuery = useDashboardSummary(currentPeriod.year, currentPeriod.month, isOpen);
-  const createTxMutation = useCreateTransaction();
-
   const [tab, setTab] = useState<TransactionType>(initialTab);
   const [amount, setAmount] = useState('');
   const [sourceAccountId, setSourceAccountId] = useState('');
@@ -92,6 +85,24 @@ export function QuickAddModal() {
   const [transactionDate, setTransactionDate] = useState(() => toDateInputValue());
   const [note, setNote] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const selectedPeriod = useMemo(() => {
+    const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(transactionDate);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12) {
+        return { year, month };
+      }
+    }
+    return getCurrentWibPeriod();
+  }, [transactionDate]);
+
+  const accountsQuery = useAccounts(isOpen);
+  const categoriesQuery = useCategories(undefined, isOpen);
+  const activeDebtsQuery = useDebts(true, isOpen);
+  const summaryQuery = useDashboardSummary(selectedPeriod.year, selectedPeriod.month, isOpen);
+  const createTxMutation = useCreateTransaction();
 
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
   const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
@@ -150,8 +161,9 @@ export function QuickAddModal() {
         setCategoryId(expenseCats[0]!.id);
       }
     } else if (tab === 'INCOME') {
-      if (incomeCategories.length > 0 && !incomeCategories.some((cat) => cat.id === categoryId)) {
-        setCategoryId(incomeCategories[0]!.id);
+      // Allow categoryId === '' ("Tanpa Kategori") on INCOME tab; only reset if it holds a non-income category id.
+      if (categoryId !== '' && !incomeCategories.some((cat) => cat.id === categoryId)) {
+        setCategoryId(incomeCategories[0]?.id ?? '');
       }
     }
   }, [isOpen, tab, essentialCategories, discretionaryCategories, incomeCategories, categoryId]);
@@ -479,10 +491,10 @@ export function QuickAddModal() {
               </span>
               {selectedCategory && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                     selectedCategory.expenseClass === 'ESSENTIAL'
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'bg-amber-50 text-amber-800'
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-rose-200 bg-rose-50 text-rose-700'
                   }`}
                 >
                   {selectedCategory.expenseClass === 'ESSENTIAL' ? 'Kebutuhan Pokok' : 'Keinginan'}
@@ -574,7 +586,7 @@ export function QuickAddModal() {
                 <span className="text-rose-500">*</span>
               </label>
               {activeDebts.length === 0 ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-medium text-emerald-900">
+                <div className="rounded-xl border border-violet-200 bg-violet-50 px-3.5 py-3 text-xs font-medium text-violet-900">
                   Anda tidak memiliki utang aktif yang perlu dibayar.
                 </div>
               ) : (

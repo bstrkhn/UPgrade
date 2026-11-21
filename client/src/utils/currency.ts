@@ -2,7 +2,7 @@ import { Decimal } from 'decimal.js';
 
 Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
-export type MoneyLike = string | number | Decimal | null | undefined;
+export type MoneyLike = string | Decimal | null | undefined;
 
 /** Valid API money string: up to 13 integer digits and at most 2 decimals. */
 export const MONEY_PATTERN = /^\d{1,13}(\.\d{1,2})?$/;
@@ -101,4 +101,9 @@ export function compareMoney(a: MoneyLike, b: MoneyLike): -1 | 0 | 1 {
 
 export function isNegativeMoney(value: MoneyLike): boolean {
   return toDecimal(value).isNegative() && !toDecimal(value).isZero();
+}
+
+/** Clamps a percentage string into [0, 100] using decimal.js for CSS progress bar widths. */
+export function clampPercentBarWidth(value: MoneyLike): string {
+  return Decimal.max(0, Decimal.min(100, toDecimal(value))).toFixed(2);
 }

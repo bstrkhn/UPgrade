@@ -27,7 +27,9 @@ import { MoneyInput } from '../components/common/MoneyInput';
 import { TransactionRow } from '../components/transactions/TransactionRow';
 import { useQuickAdd } from '../context/QuickAddContext';
 import { useToast } from '../context/ToastContext';
+import { ACCOUNT_TYPE_LABELS } from '../utils/constants';
 import {
+  clampPercentBarWidth,
   compareMoney,
   finalizeMoneyInput,
   formatPercent,
@@ -36,14 +38,6 @@ import {
   isValidNonNegativeMoney,
 } from '../utils/currency';
 import { formatPeriodId, getCurrentWibPeriod, isSamePeriod, shiftPeriod, type Period } from '../utils/date';
-
-export const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
-  CASH: 'Tunai',
-  BANK: 'Bank',
-  EWALLET: 'E-Wallet',
-  EMERGENCY_FUND: 'Dana Darurat',
-  INVESTMENT: 'Investasi',
-};
 
 export function DashboardPage() {
   const { data: user } = useMe();
@@ -69,7 +63,7 @@ export function DashboardPage() {
   const recentTransactions = recentTxQuery.data?.transactions ?? [];
 
   const surplusIsNegative = summary ? isNegativeMoney(summary.cashFlow.surplus) : false;
-  const savingRateNumeric = summary ? Math.max(0, Math.min(100, Number(summary.cashFlow.savingRatePct))) : 0;
+  const savingRateBarWidth = summary ? clampPercentBarWidth(summary.cashFlow.savingRatePct) : '0.00';
 
   const handleCreateAccount = async (event: FormEvent) => {
     event.preventDefault();
@@ -270,7 +264,11 @@ export function DashboardPage() {
             <span className="text-xs font-bold tracking-wide text-slate-500 uppercase">
               Rasio Tabungan (Saving Rate)
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+            <div
+              className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                surplusIsNegative ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+              }`}
+            >
               <Percent className="h-4 w-4" />
             </div>
           </div>
@@ -294,7 +292,7 @@ export function DashboardPage() {
                 <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-emerald-500 transition-all"
-                    style={{ width: `${savingRateNumeric}%` }}
+                    style={{ width: `${savingRateBarWidth}%` }}
                   />
                 </div>
               </>

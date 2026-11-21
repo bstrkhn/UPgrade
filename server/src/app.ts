@@ -8,7 +8,9 @@ import { isProduction } from './config/env.js';
 import { authCookie } from './middlewares/authCookie.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 import { accountsRouter } from './modules/accounts/accounts.routes.js';
+import { analyticsRouter } from './modules/analytics/analytics.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { budgetsRouter } from './modules/budgets/budgets.routes.js';
 import { categoriesRouter } from './modules/categories/categories.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
 import { debtsRouter } from './modules/debts/debts.routes.js';
@@ -40,6 +42,8 @@ export function createApp(): Express {
   app.use('/api/v1/transactions', authCookie, transactionsRouter);
   app.use('/api/v1/debts', authCookie, debtsRouter);
   app.use('/api/v1/dashboard', authCookie, dashboardRouter);
+  app.use('/api/v1/budgets', authCookie, budgetsRouter);
+  app.use('/api/v1/analytics', authCookie, analyticsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

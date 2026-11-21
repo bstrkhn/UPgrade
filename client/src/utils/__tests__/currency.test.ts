@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampPercentBarWidth,
   compareMoney,
   finalizeMoneyInput,
   formatPercent,
@@ -49,6 +50,12 @@ describe('formatPercent', () => {
   it('uses a decimal comma', () => {
     expect(formatPercent('36.00')).toBe('36,00%');
     expect(formatPercent('-12.5')).toBe('-12,50%');
+  });
+
+  it('clamps percentage bar width between 0 and 100 as a string without JS number math', () => {
+    expect(clampPercentBarWidth('36.00')).toBe('36.00');
+    expect(clampPercentBarWidth('-15.00')).toBe('0.00');
+    expect(clampPercentBarWidth('140.00')).toBe('100.00');
   });
 });
 

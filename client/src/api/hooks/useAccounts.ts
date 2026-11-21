@@ -43,6 +43,7 @@ export function useUpdateAccount() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
     },
   });
 }

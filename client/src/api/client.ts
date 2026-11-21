@@ -48,15 +48,30 @@ export function extractApiErrorMessage(
   return fallback;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+/**
+ * Registers a callback invoked when a protected endpoint returns 401 Unauthorized,
+ * allowing TanStack Query to clear the cached user session and trigger route-guard redirection.
+ */
+export function registerUnauthorizedHandler(handler: () => void): void {
+  unauthorizedHandler = handler;
+}
+
+const AUTH_EXEMPT_401_PATHS = ['/auth/login', '/auth/register', '/auth/me'];
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
     if (axios.isAxiosError(error)) {
       const axiosErr = error as AxiosError<ApiErrorEnvelope>;
       const status = axiosErr.response?.status ?? 0;
+      const requestUrl = axiosErr.config?.url ?? '';
+      if (status === 401 && !AUTH_EXEMPT_401_PATHS.some((exempt) => requestUrl.endsWith(exempt))) {
+        unauthorizedHandler?.();
+      }
       const issues = axiosErr.response?.data?.meta?.errors ?? [];
       const message = extractApiErrorMessage(axiosErr);
-      // Do NOT force window.location redirect on 401 — route guards handle unauthenticated state cleanly without reload loops.
       return Promise.reject(new ApiClientError(message, status, issues));
     }
     return Promise.reject(error);

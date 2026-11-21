@@ -1,5 +1,4 @@
 import {
-  ArrowUpRight,
   LayoutDashboard,
   ListOrdered,
   LogOut,
@@ -193,5 +192,3 @@ export function AppLayout() {
     </QuickAddProvider>
   );
 }
-
-export { ArrowUpRight };
