@@ -10,16 +10,18 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { extractApiErrorMessage } from '../../api/client';
 import { useAccounts } from '../../api/hooks/useAccounts';
+import { useAnalyticsDashboard } from '../../api/hooks/useAnalytics';
 import { useCategories } from '../../api/hooks/useCategories';
-import { useDashboardSummary } from '../../api/hooks/useDashboard';
 import { useDebts } from '../../api/hooks/useDebts';
 import { useCreateTransaction } from '../../api/hooks/useTransactions';
 import type { CreateTransactionPayload, TransactionType } from '../../api/types';
 import { useQuickAdd } from '../../context/QuickAddContext';
 import { useToast } from '../../context/ToastContext';
 import {
+  calculatePercentage,
   compareMoney,
   finalizeMoneyInput,
   formatRupiah,
@@ -28,7 +30,13 @@ import {
   subtractMoney,
   sumMoney,
 } from '../../utils/currency';
-import { dateInputToTransactionDate, getCurrentWibPeriod, toDateInputValue } from '../../utils/date';
+import {
+  dateInputToTransactionDate,
+  formatPeriodId,
+  getCurrentWibPeriod,
+  isSamePeriod,
+  toDateInputValue,
+} from '../../utils/date';
 import { Modal } from '../common/Modal';
 import { MoneyInput } from '../common/MoneyInput';
 
@@ -101,7 +109,7 @@ export function QuickAddModal() {
   const accountsQuery = useAccounts(isOpen);
   const categoriesQuery = useCategories(undefined, isOpen);
   const activeDebtsQuery = useDebts(true, isOpen);
-  const summaryQuery = useDashboardSummary(selectedPeriod.year, selectedPeriod.month, isOpen);
+  const analyticsQuery = useAnalyticsDashboard(selectedPeriod.year, selectedPeriod.month, isOpen);
   const createTxMutation = useCreateTransaction();
 
   const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
@@ -193,10 +201,23 @@ export function QuickAddModal() {
   );
 
   const selectedCategorySpent = useMemo(() => {
-    if (!categoryId || !summaryQuery.data) return '0.00';
-    const found = summaryQuery.data.categoryMonthlySpent.find((item) => item.categoryId === categoryId);
+    if (!categoryId || !analyticsQuery.data) return '0.00';
+    const found = analyticsQuery.data.categoryMonthlySpent.find((item) => item.categoryId === categoryId);
     return found?.spent ?? '0.00';
-  }, [categoryId, summaryQuery.data]);
+  }, [categoryId, analyticsQuery.data]);
+
+  const selectedCategoryBudget = useMemo(() => {
+    if (!categoryId || !analyticsQuery.data) return null;
+    const found = analyticsQuery.data.budgetHealth.categories.find((item) => item.categoryId === categoryId);
+    if (!found || compareMoney(found.allocated, '0') <= 0) return null;
+    return found;
+  }, [categoryId, analyticsQuery.data]);
+
+  const isSelectedPeriodCurrent = useMemo(
+    () => isSamePeriod(selectedPeriod, getCurrentWibPeriod()),
+    [selectedPeriod],
+  );
+  const periodPhrase = isSelectedPeriodCurrent ? 'bulan ini' : `periode ${formatPeriodId(selectedPeriod)}`;
 
   const finalAmount = finalizeMoneyInput(amount);
   const finalPrincipal = finalizeMoneyInput(principalPaid);
@@ -325,12 +346,20 @@ export function QuickAddModal() {
       const response = await createTxMutation.mutateAsync(payload);
 
       if (tab === 'EXPENSE' && selectedCategory) {
-        const updatedCatSpent = sumMoney([selectedCategorySpent, finalAmount]);
         const labelNote = note.trim() ? note.trim() : selectedCategory.name;
-        showToast({
-          variant: 'success',
-          message: `${labelNote} ${formatRupiah(finalAmount)} tersimpan. Total kategori ${selectedCategory.name} bulan ini: ${formatRupiah(updatedCatSpent)}.`,
-        });
+        if (selectedCategoryBudget) {
+          const updatedRemaining = subtractMoney(selectedCategoryBudget.remaining, finalAmount);
+          showToast({
+            variant: 'success',
+            message: `${labelNote} ${formatRupiah(finalAmount)} tersimpan. Sisa budget ${selectedCategory.name} ${periodPhrase}: ${formatRupiah(updatedRemaining)}.`,
+          });
+        } else {
+          const updatedCatSpent = sumMoney([selectedCategorySpent, finalAmount]);
+          showToast({
+            variant: 'success',
+            message: `${labelNote} ${formatRupiah(finalAmount)} tersimpan. Total kategori ${selectedCategory.name} ${periodPhrase}: ${formatRupiah(updatedCatSpent)}.`,
+          });
+        }
       } else if (tab === 'INCOME' && sourceAccount) {
         showToast({
           variant: 'success',
@@ -484,11 +513,51 @@ export function QuickAddModal() {
                 </optgroup>
               )}
             </select>
-            <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
-              <span>
-                Terpakai bulan ini:{' '}
-                <strong className="money font-semibold text-slate-800">{formatRupiah(selectedCategorySpent)}</strong>
-              </span>
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              {selectedCategoryBudget ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    Sisa budget {periodPhrase}:{' '}
+                    <strong
+                      className={`money font-semibold ${
+                        compareMoney(selectedCategoryBudget.remaining, '0') < 0
+                          ? 'text-rose-600'
+                          : compareMoney(
+                                calculatePercentage(
+                                  selectedCategoryBudget.remaining,
+                                  selectedCategoryBudget.allocated,
+                                ),
+                                '20',
+                              ) < 0
+                            ? 'text-amber-700'
+                            : 'text-emerald-600'
+                      }`}
+                    >
+                      {formatRupiah(selectedCategoryBudget.remaining)}
+                    </strong>
+                  </span>
+                  <span className="text-slate-400">
+                    (Terpakai <span className="money">{formatRupiah(selectedCategoryBudget.spent)}</span> /{' '}
+                    <span className="money">{formatRupiah(selectedCategoryBudget.allocated)}</span>)
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>
+                    Terpakai {periodPhrase}:{' '}
+                    <strong className="money font-semibold text-slate-800">
+                      {formatRupiah(selectedCategorySpent)}
+                    </strong>
+                  </span>
+                  <Link
+                    to="/budgets"
+                    onClick={closeQuickAdd}
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 hover:underline"
+                  >
+                    Atur budget
+                  </Link>
+                </div>
+              )}
               {selectedCategory && (
                 <span
                   className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${

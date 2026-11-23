@@ -15,6 +15,7 @@ import { categoriesRouter } from './modules/categories/categories.routes.js';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes.js';
 import { debtsRouter } from './modules/debts/debts.routes.js';
 import { onboardingRouter } from './modules/onboarding/onboarding.routes.js';
+import { reportsRouter } from './modules/reports/reports.routes.js';
 import { transactionsRouter } from './modules/transactions/transactions.routes.js';
 
 export function createApp(): Express {
@@ -44,6 +45,7 @@ export function createApp(): Express {
   app.use('/api/v1/dashboard', authCookie, dashboardRouter);
   app.use('/api/v1/budgets', authCookie, budgetsRouter);
   app.use('/api/v1/analytics', authCookie, analyticsRouter);
+  app.use('/api/v1/reports', authCookie, reportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

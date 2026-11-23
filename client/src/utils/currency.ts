@@ -107,3 +107,24 @@ export function isNegativeMoney(value: MoneyLike): boolean {
 export function clampPercentBarWidth(value: MoneyLike): string {
   return Decimal.max(0, Decimal.min(100, toDecimal(value))).toFixed(2);
 }
+
+/** Computes (part / whole) * 100 as a 2-decimal string using decimal.js (returns "0.00" when whole <= 0). */
+export function calculatePercentage(part: MoneyLike, whole: MoneyLike): string {
+  const denominator = toDecimal(whole);
+  if (denominator.lte(0)) {
+    return '0.00';
+  }
+  return toDecimal(part).div(denominator).times(100).toFixed(2);
+}
+
+/** Multiplies a money value by a decimal factor (e.g. "0.50") and divides evenly across `count` items using decimal.js. */
+export function allocateProportionalShare(total: MoneyLike, factor: string, count: number): string {
+  if (count <= 0) {
+    return '0';
+  }
+  const pool = toDecimal(total).times(new Decimal(factor));
+  if (pool.lte(0)) {
+    return '0';
+  }
+  return pool.div(new Decimal(count)).toDecimalPlaces(0, Decimal.ROUND_FLOOR).toFixed(0);
+}

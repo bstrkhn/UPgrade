@@ -15,7 +15,8 @@ export function useCompleteOnboarding() {
       queryClient.setQueryData(queryKeys.auth.me, envelope.data.user);
       void queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.debts.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
     },
   });
 }

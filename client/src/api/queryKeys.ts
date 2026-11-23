@@ -20,8 +20,14 @@ export const queryKeys = {
     all: ['transactions'] as const,
     list: (filters: ListTransactionsFilter) => ['transactions', 'list', filters] as const,
   },
-  dashboard: {
-    all: ['dashboard'] as const,
-    summary: (year: number, month: number) => ['dashboard', 'summary', { year, month }] as const,
+  budgets: {
+    all: ['budgets'] as const,
+    period: (year: number, month: number) => ['budgets', 'period', { year, month }] as const,
+  },
+  analytics: {
+    all: ['analytics'] as const,
+    dashboard: (year: number, month: number) => ['analytics', 'dashboard', { year, month }] as const,
+    snapshots: ['analytics', 'snapshots'] as const,
+    fire: ['analytics', 'fire'] as const,
   },
 };

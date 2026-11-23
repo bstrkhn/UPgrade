@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js';
-import type { ExpenseClass, HealthStatus } from '@prisma/client';
+import type { ExpenseClass, HealthStatus, InterestType } from '@prisma/client';
 import { ZERO, formatRupiah, toMoneyString } from './money.js';
 
 export type EmergencyFundDataSource = 'ONBOARDING_BASELINE' | 'ACTUAL_HISTORICAL';
@@ -769,5 +769,570 @@ export function evaluateMilestoneLevel(params: EvaluateMilestoneParams): Milesto
     investmentPortfolio: toMoneyString(safeInvestments),
     nextLevelRequirements,
     missions,
+  };
+}
+
+// ============================================================================
+// PHASE 3: DEBT DESTROYER (SNOWBALL VS AVALANCHE) & FIRE COUNTDOWN (L5–L7)
+// ============================================================================
+
+export type DebtPayoffStrategyName = 'SNOWBALL' | 'AVALANCHE';
+
+export interface SimDebtInput {
+  id: string;
+  name: string;
+  totalPrincipal: Decimal;
+  remainingBalance: Decimal;
+  annualInterestPct: Decimal;
+  interestType: InterestType;
+  minimumMonthlyPay: Decimal;
+}
+
+export interface SimulateDebtPayoffParams {
+  debts: SimDebtInput[];
+  extraMonthlyPayment: Decimal;
+  startDate?: Date;
+}
+
+export interface DebtPayoffOrderItem {
+  debtId: string;
+  name: string;
+  paidOffMonth: number;
+  paidOffDate: string;
+  totalInterestPaid: string;
+  totalAmountPaid: string;
+}
+
+export interface DebtPayoffMonthlyPoint {
+  month: number;
+  date: string;
+  totalRemainingBalance: string;
+  totalInterestThisMonth: string;
+  totalPrincipalThisMonth: string;
+  totalPaidThisMonth: string;
+}
+
+export interface DebtStrategySimulationResult {
+  strategy: DebtPayoffStrategyName;
+  isPayable: boolean;
+  unpayableReason: string | null;
+  monthsToDebtFree: number | null;
+  debtFreeDate: string | null;
+  totalInterestPaid: string;
+  totalAmountPaid: string;
+  payoffOrder: DebtPayoffOrderItem[];
+  schedule: DebtPayoffMonthlyPoint[];
+}
+
+export interface DebtSimulationComparison {
+  interestSavedByAvalanche: string;
+  monthsSavedByAvalanche: number;
+  recommendedStrategy: 'AVALANCHE' | 'SNOWBALL' | 'TIE';
+}
+
+export interface DebtPayoffSimulationOutput {
+  snowball: DebtStrategySimulationResult;
+  avalanche: DebtStrategySimulationResult;
+  comparison: DebtSimulationComparison;
+}
+
+const MAX_SIMULATION_MONTHS = 600;
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function addMonthsToWibYearMonth(startDate: Date, monthsToAdd: number): string {
+  const shifted = new Date(startDate.getTime() + WIB_OFFSET_MS);
+  const baseYear = shifted.getUTCFullYear();
+  const baseMonthIndex = shifted.getUTCMonth();
+  const totalMonths = baseYear * 12 + baseMonthIndex + monthsToAdd;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  return `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+}
+
+function getWibCalendarYear(startDate: Date): number {
+  const shifted = new Date(startDate.getTime() + WIB_OFFSET_MS);
+  return shifted.getUTCFullYear();
+}
+
+function computeMonthlyDebtInterest(debt: SimDebtInput, currentBalance: Decimal): Decimal {
+  if (currentBalance.lte(ZERO) || debt.annualInterestPct.lte(ZERO)) {
+    return ZERO;
+  }
+  const basis = debt.interestType === 'FLAT' ? debt.totalPrincipal : currentBalance;
+  return basis
+    .times(debt.annualInterestPct)
+    .div(HUNDRED)
+    .div(TWELVE)
+    .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+}
+
+function runSingleDebtStrategy(
+  strategy: DebtPayoffStrategyName,
+  activeDebts: readonly SimDebtInput[],
+  extraMonthlyPayment: Decimal,
+  startDate: Date,
+): DebtStrategySimulationResult {
+  if (activeDebts.length === 0) {
+    return {
+      strategy,
+      isPayable: true,
+      unpayableReason: null,
+      monthsToDebtFree: 0,
+      debtFreeDate: addMonthsToWibYearMonth(startDate, 0),
+      totalInterestPaid: '0.00',
+      totalAmountPaid: '0.00',
+      payoffOrder: [],
+      schedule: [],
+    };
+  }
+
+  const ordered = [...activeDebts].sort((a, b) => {
+    if (strategy === 'SNOWBALL') {
+      return (
+        a.remainingBalance.comparedTo(b.remainingBalance) ||
+        b.annualInterestPct.comparedTo(a.annualInterestPct) ||
+        a.name.localeCompare(b.name)
+      );
+    }
+    return (
+      b.annualInterestPct.comparedTo(a.annualInterestPct) ||
+      a.remainingBalance.comparedTo(b.remainingBalance) ||
+      a.name.localeCompare(b.name)
+    );
+  });
+
+  const totalMinimumPay = ordered.reduce((acc, debt) => acc.plus(Decimal.max(ZERO, debt.minimumMonthlyPay)), ZERO);
+  const monthlyBudget = totalMinimumPay.plus(Decimal.max(ZERO, extraMonthlyPayment));
+
+  const firstMonthInterest = ordered.reduce(
+    (acc, debt) => acc.plus(computeMonthlyDebtInterest(debt, debt.remainingBalance)),
+    ZERO,
+  );
+
+  // Early anti-infinite-loop guard: total monthly budget cannot even cover the first month's interest
+  if (monthlyBudget.lte(ZERO) || monthlyBudget.lte(firstMonthInterest)) {
+    return {
+      strategy,
+      isPayable: false,
+      unpayableReason:
+        'Total pembayaran bulanan belum mencukupi untuk menutup beban bunga utang. Tambahkan pembayaran ekstra bulanan.',
+      monthsToDebtFree: null,
+      debtFreeDate: null,
+      totalInterestPaid: '0.00',
+      totalAmountPaid: '0.00',
+      payoffOrder: [],
+      schedule: [],
+    };
+  }
+
+  interface WorkingDebtState {
+    debt: SimDebtInput;
+    balance: Decimal;
+    unpaidInterest: Decimal;
+    cumulativeInterestPaid: Decimal;
+    cumulativeAmountPaid: Decimal;
+    paidOff: boolean;
+  }
+
+  const states: WorkingDebtState[] = ordered.map((debt) => ({
+    debt,
+    balance: debt.remainingBalance,
+    unpaidInterest: ZERO,
+    cumulativeInterestPaid: ZERO,
+    cumulativeAmountPaid: ZERO,
+    paidOff: false,
+  }));
+
+  const payoffOrder: DebtPayoffOrderItem[] = [];
+  const schedule: DebtPayoffMonthlyPoint[] = [];
+  let grandTotalInterestPaid = ZERO;
+  let grandTotalAmountPaid = ZERO;
+
+  for (let month = 1; month <= MAX_SIMULATION_MONTHS; month += 1) {
+    for (const state of states) {
+      if (state.paidOff || state.balance.lte(ZERO)) continue;
+      state.unpaidInterest = computeMonthlyDebtInterest(state.debt, state.balance);
+    }
+
+    let remainingBudget = monthlyBudget;
+    let totalInterestThisMonth = ZERO;
+    let totalPrincipalThisMonth = ZERO;
+
+    // Stage 1: Minimum payments on each active debt
+    for (const state of states) {
+      if (state.paidOff || (state.balance.lte(ZERO) && state.unpaidInterest.lte(ZERO))) continue;
+      if (remainingBudget.lte(ZERO)) break;
+
+      const totalDue = state.balance.plus(state.unpaidInterest);
+      const minPay = Decimal.min(Decimal.max(ZERO, state.debt.minimumMonthlyPay), totalDue, remainingBudget);
+      if (minPay.lte(ZERO)) continue;
+
+      const interestPortion = Decimal.min(minPay, state.unpaidInterest);
+      const principalPortion = minPay.minus(interestPortion);
+
+      state.unpaidInterest = state.unpaidInterest.minus(interestPortion);
+      state.balance = state.balance.minus(principalPortion);
+      remainingBudget = remainingBudget.minus(minPay);
+
+      totalInterestThisMonth = totalInterestThisMonth.plus(interestPortion);
+      totalPrincipalThisMonth = totalPrincipalThisMonth.plus(principalPortion);
+      state.cumulativeInterestPaid = state.cumulativeInterestPaid.plus(interestPortion);
+      state.cumulativeAmountPaid = state.cumulativeAmountPaid.plus(minPay);
+    }
+
+    // Stage 2: Rollover freed minimums + extraMonthlyPayment into priority debts
+    for (const state of states) {
+      if (state.paidOff || (state.balance.lte(ZERO) && state.unpaidInterest.lte(ZERO))) continue;
+      if (remainingBudget.lte(ZERO)) break;
+
+      if (state.unpaidInterest.gt(ZERO)) {
+        const interestCover = Decimal.min(remainingBudget, state.unpaidInterest);
+        state.unpaidInterest = state.unpaidInterest.minus(interestCover);
+        remainingBudget = remainingBudget.minus(interestCover);
+        totalInterestThisMonth = totalInterestThisMonth.plus(interestCover);
+        state.cumulativeInterestPaid = state.cumulativeInterestPaid.plus(interestCover);
+        state.cumulativeAmountPaid = state.cumulativeAmountPaid.plus(interestCover);
+      }
+
+      if (remainingBudget.gt(ZERO) && state.balance.gt(ZERO)) {
+        const principalCover = Decimal.min(remainingBudget, state.balance);
+        state.balance = state.balance.minus(principalCover);
+        remainingBudget = remainingBudget.minus(principalCover);
+        totalPrincipalThisMonth = totalPrincipalThisMonth.plus(principalCover);
+        state.cumulativeAmountPaid = state.cumulativeAmountPaid.plus(principalCover);
+      }
+    }
+
+    // Capitalize any residual unpaid interest on lower-priority debts and check payoffs
+    let totalRemainingBalance = ZERO;
+    const monthDateStr = addMonthsToWibYearMonth(startDate, month);
+
+    for (const state of states) {
+      if (state.paidOff) continue;
+      if (state.unpaidInterest.gt(ZERO)) {
+        state.balance = state.balance.plus(state.unpaidInterest);
+        state.unpaidInterest = ZERO;
+      }
+
+      if (state.balance.lte(ZERO)) {
+        state.balance = ZERO;
+        state.paidOff = true;
+        payoffOrder.push({
+          debtId: state.debt.id,
+          name: state.debt.name,
+          paidOffMonth: month,
+          paidOffDate: monthDateStr,
+          totalInterestPaid: toMoneyString(state.cumulativeInterestPaid),
+          totalAmountPaid: toMoneyString(state.cumulativeAmountPaid),
+        });
+      } else {
+        totalRemainingBalance = totalRemainingBalance.plus(state.balance);
+      }
+    }
+
+    const totalPaidThisMonth = totalInterestThisMonth.plus(totalPrincipalThisMonth);
+    grandTotalInterestPaid = grandTotalInterestPaid.plus(totalInterestThisMonth);
+    grandTotalAmountPaid = grandTotalAmountPaid.plus(totalPaidThisMonth);
+
+    schedule.push({
+      month,
+      date: monthDateStr,
+      totalRemainingBalance: toMoneyString(totalRemainingBalance),
+      totalInterestThisMonth: toMoneyString(totalInterestThisMonth),
+      totalPrincipalThisMonth: toMoneyString(totalPrincipalThisMonth),
+      totalPaidThisMonth: toMoneyString(totalPaidThisMonth),
+    });
+
+    if (totalRemainingBalance.lte(ZERO)) {
+      return {
+        strategy,
+        isPayable: true,
+        unpayableReason: null,
+        monthsToDebtFree: month,
+        debtFreeDate: monthDateStr,
+        totalInterestPaid: toMoneyString(grandTotalInterestPaid),
+        totalAmountPaid: toMoneyString(grandTotalAmountPaid),
+        payoffOrder,
+        schedule,
+      };
+    }
+  }
+
+  return {
+    strategy,
+    isPayable: false,
+    unpayableReason:
+      'Waktu pelunasan melebihi batas simulasi 50 tahun (600 bulan). Tambahkan pembayaran ekstra bulanan.',
+    monthsToDebtFree: null,
+    debtFreeDate: null,
+    totalInterestPaid: toMoneyString(grandTotalInterestPaid),
+    totalAmountPaid: toMoneyString(grandTotalAmountPaid),
+    payoffOrder,
+    schedule,
+  };
+}
+
+/**
+ * Simulates both SNOWBALL (smallest balance first) and AVALANCHE (highest interest rate first)
+ * debt payoff strategies using 100% decimal.js, supporting FLAT and EFFECTIVE interest types,
+ * rollover surplus, and a 600-month anti-infinite-loop guard.
+ */
+export function simulateDebtPayoff(params: SimulateDebtPayoffParams): DebtPayoffSimulationOutput {
+  const startDate = params.startDate ?? new Date();
+  const activeDebts = params.debts.filter((debt) => debt.remainingBalance.gt(ZERO));
+  const extra = Decimal.max(ZERO, params.extraMonthlyPayment);
+
+  const snowball = runSingleDebtStrategy('SNOWBALL', activeDebts, extra, startDate);
+  const avalanche = runSingleDebtStrategy('AVALANCHE', activeDebts, extra, startDate);
+
+  let interestSavedByAvalanche = ZERO;
+  let monthsSavedByAvalanche = 0;
+  let recommendedStrategy: 'AVALANCHE' | 'SNOWBALL' | 'TIE' = 'TIE';
+
+  if (snowball.isPayable && avalanche.isPayable) {
+    const snowballInterest = new Decimal(snowball.totalInterestPaid);
+    const avalancheInterest = new Decimal(avalanche.totalInterestPaid);
+    const diff = snowballInterest.minus(avalancheInterest);
+    interestSavedByAvalanche = Decimal.max(ZERO, diff);
+    monthsSavedByAvalanche = (snowball.monthsToDebtFree ?? 0) - (avalanche.monthsToDebtFree ?? 0);
+
+    if (diff.gt(ZERO)) {
+      recommendedStrategy = 'AVALANCHE';
+    } else if (diff.lt(ZERO)) {
+      recommendedStrategy = 'SNOWBALL';
+    } else if (monthsSavedByAvalanche > 0) {
+      recommendedStrategy = 'AVALANCHE';
+    } else if (monthsSavedByAvalanche < 0) {
+      recommendedStrategy = 'SNOWBALL';
+    } else {
+      recommendedStrategy = 'TIE';
+    }
+  }
+
+  return {
+    snowball,
+    avalanche,
+    comparison: {
+      interestSavedByAvalanche: toMoneyString(interestSavedByAvalanche),
+      monthsSavedByAvalanche,
+      recommendedStrategy,
+    },
+  };
+}
+
+export interface CalculateFireProjectionParams {
+  monthlyEssentialBasis: Decimal;
+  currentInvestmentPortfolio: Decimal;
+  monthlyContribution: Decimal;
+  swrRatePct: Decimal;
+  inflationRatePct: Decimal;
+  expectedReturnRatePct: Decimal;
+  maxYears?: number;
+  startDate?: Date;
+}
+
+export interface FireMilestoneCountdown {
+  targetAmount: string;
+  progressPct: string;
+  alreadyReached: boolean;
+  isReachableWithinHorizon: boolean;
+  monthsToTarget: number | null;
+  years: number | null;
+  remainingMonths: number | null;
+  targetDate: string | null;
+}
+
+export interface FireYearlyProjectionPoint {
+  year: number;
+  calendarYear: number;
+  projectedPortfolio: string;
+  totalContributed: string;
+  investmentGrowth: string;
+  level5Target: string;
+  fireNumber: string;
+  abundantNumber: string;
+}
+
+export interface FireProjectionResult {
+  annualEssential: string;
+  level5Target: string;
+  fireNumber: string;
+  abundantNumber: string;
+  swrRatePct: string;
+  nominalReturnRatePct: string;
+  inflationRatePct: string;
+  realReturnRatePct: string;
+  milestones: {
+    level5: FireMilestoneCountdown;
+    level6Fire: FireMilestoneCountdown;
+    level7Abundant: FireMilestoneCountdown;
+  };
+  yearlyProjection: FireYearlyProjectionPoint[];
+}
+
+/**
+ * Calculates SWR & FIRE Countdown across Level 5 (12x essential), Level 6 (FIRE Number),
+ * and Level 7 (2x FIRE Number) using the Fisher real return rate:
+ *   r_real = ((1 + r_nom) / (1 + r_inf)) - 1
+ * Strictly uses decimal.js with division-by-zero and negative-real-return guards.
+ */
+export function calculateFireProjection(params: CalculateFireProjectionParams): FireProjectionResult {
+  const startDate = params.startDate ?? new Date();
+  const startCalendarYear = getWibCalendarYear(startDate);
+  const horizonYears = Math.max(1, Math.min(60, Math.trunc(params.maxYears ?? 40)));
+  const horizonMonths = horizonYears * 12;
+
+  const safeEssential = Decimal.max(ZERO, params.monthlyEssentialBasis);
+  const safePortfolio = Decimal.max(ZERO, params.currentInvestmentPortfolio);
+  const safeContribution = Decimal.max(ZERO, params.monthlyContribution);
+  const safeSwrPct = params.swrRatePct.gt(ZERO) ? params.swrRatePct : ZERO;
+  const safeInflationPct = Decimal.max(ZERO, params.inflationRatePct);
+  const safeReturnPct = Decimal.max(ZERO, params.expectedReturnRatePct);
+
+  const annualEssential = safeEssential.times(TWELVE);
+  const level5Target = annualEssential;
+  const fireNumber =
+    safeEssential.gt(ZERO) && safeSwrPct.gt(ZERO) ? annualEssential.div(safeSwrPct.div(HUNDRED)) : ZERO;
+  const abundantNumber = fireNumber.times(2);
+
+  // Fisher equation: r_real = ((1 + r_nom) / (1 + r_inf)) - 1
+  const onePlusReturn = new Decimal(1).plus(safeReturnPct.div(HUNDRED));
+  const onePlusInflation = new Decimal(1).plus(safeInflationPct.div(HUNDRED));
+  const realReturnDecimal = onePlusInflation.gt(ZERO)
+    ? onePlusReturn.div(onePlusInflation).minus(1)
+    : ZERO;
+  const realReturnRatePct = realReturnDecimal.times(HUNDRED);
+  const monthlyRealRate = realReturnDecimal.div(TWELVE);
+
+  const targetsValid = safeEssential.gt(ZERO) && safeSwrPct.gt(ZERO);
+
+  let l5ReachedMonth: number | null = targetsValid && safePortfolio.gte(level5Target) ? 0 : null;
+  let l6ReachedMonth: number | null = targetsValid && safePortfolio.gte(fireNumber) ? 0 : null;
+  let l7ReachedMonth: number | null = targetsValid && safePortfolio.gte(abundantNumber) ? 0 : null;
+
+  const level5TargetStr = toMoneyString(level5Target);
+  const fireNumberStr = toMoneyString(fireNumber);
+  const abundantNumberStr = toMoneyString(abundantNumber);
+
+  const allYearlyPoints: FireYearlyProjectionPoint[] = [
+    {
+      year: 0,
+      calendarYear: startCalendarYear,
+      projectedPortfolio: toMoneyString(safePortfolio),
+      totalContributed: toMoneyString(safePortfolio),
+      investmentGrowth: '0.00',
+      level5Target: level5TargetStr,
+      fireNumber: fireNumberStr,
+      abundantNumber: abundantNumberStr,
+    },
+  ];
+
+  let runningPortfolio = safePortfolio;
+  let runningContributed = safePortfolio;
+
+  for (let month = 1; month <= horizonMonths; month += 1) {
+    runningPortfolio = Decimal.max(
+      ZERO,
+      runningPortfolio.times(new Decimal(1).plus(monthlyRealRate)).plus(safeContribution),
+    );
+    runningContributed = runningContributed.plus(safeContribution);
+
+    if (targetsValid) {
+      if (l5ReachedMonth === null && runningPortfolio.gte(level5Target)) {
+        l5ReachedMonth = month;
+      }
+      if (l6ReachedMonth === null && runningPortfolio.gte(fireNumber)) {
+        l6ReachedMonth = month;
+      }
+      if (l7ReachedMonth === null && runningPortfolio.gte(abundantNumber)) {
+        l7ReachedMonth = month;
+      }
+    }
+
+    if (month % 12 === 0) {
+      const yearNum = month / 12;
+      const growth = runningPortfolio.minus(runningContributed);
+      allYearlyPoints.push({
+        year: yearNum,
+        calendarYear: startCalendarYear + yearNum,
+        projectedPortfolio: toMoneyString(runningPortfolio),
+        totalContributed: toMoneyString(runningContributed),
+        investmentGrowth: toMoneyString(growth),
+        level5Target: level5TargetStr,
+        fireNumber: fireNumberStr,
+        abundantNumber: abundantNumberStr,
+      });
+    }
+  }
+
+  const buildMilestoneCountdown = (target: Decimal, reachedMonth: number | null): FireMilestoneCountdown => {
+    const progress = target.gt(ZERO) ? progressTowardTarget(safePortfolio, target) : ZERO;
+    if (!targetsValid || target.lte(ZERO)) {
+      return {
+        targetAmount: toMoneyString(target),
+        progressPct: '0.00',
+        alreadyReached: false,
+        isReachableWithinHorizon: false,
+        monthsToTarget: null,
+        years: null,
+        remainingMonths: null,
+        targetDate: null,
+      };
+    }
+    if (reachedMonth === 0) {
+      return {
+        targetAmount: toMoneyString(target),
+        progressPct: '100.00',
+        alreadyReached: true,
+        isReachableWithinHorizon: true,
+        monthsToTarget: 0,
+        years: 0,
+        remainingMonths: 0,
+        targetDate: addMonthsToWibYearMonth(startDate, 0),
+      };
+    }
+    if (reachedMonth !== null) {
+      return {
+        targetAmount: toMoneyString(target),
+        progressPct: toMoneyString(progress),
+        alreadyReached: false,
+        isReachableWithinHorizon: true,
+        monthsToTarget: reachedMonth,
+        years: Math.floor(reachedMonth / 12),
+        remainingMonths: reachedMonth % 12,
+        targetDate: addMonthsToWibYearMonth(startDate, reachedMonth),
+      };
+    }
+    return {
+      targetAmount: toMoneyString(target),
+      progressPct: toMoneyString(progress),
+      alreadyReached: false,
+      isReachableWithinHorizon: false,
+      monthsToTarget: null,
+      years: null,
+      remainingMonths: null,
+      targetDate: null,
+    };
+  };
+
+  const fireYears = l6ReachedMonth !== null ? Math.ceil(l6ReachedMonth / 12) : horizonYears;
+  const chartCapYears = Math.min(horizonYears, Math.max(10, fireYears + 5));
+  const yearlyProjection = allYearlyPoints.slice(0, chartCapYears + 1);
+
+  return {
+    annualEssential: toMoneyString(annualEssential),
+    level5Target: level5TargetStr,
+    fireNumber: fireNumberStr,
+    abundantNumber: abundantNumberStr,
+    swrRatePct: toMoneyString(safeSwrPct),
+    nominalReturnRatePct: toMoneyString(safeReturnPct),
+    inflationRatePct: toMoneyString(safeInflationPct),
+    realReturnRatePct: toMoneyString(realReturnRatePct),
+    milestones: {
+      level5: buildMilestoneCountdown(level5Target, l5ReachedMonth),
+      level6Fire: buildMilestoneCountdown(fireNumber, l6ReachedMonth),
+      level7Abundant: buildMilestoneCountdown(abundantNumber, l7ReachedMonth),
+    },
+    yearlyProjection,
   };
 }

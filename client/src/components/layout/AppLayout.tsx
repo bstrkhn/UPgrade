@@ -1,25 +1,73 @@
 import {
+  CreditCard,
+  Flame,
+  Landmark,
   LayoutDashboard,
   ListOrdered,
   LogOut,
+  MoreHorizontal,
+  PieChart,
   Plus,
   Settings,
   TrendingUp,
   Wallet,
 } from 'lucide-react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { extractApiErrorMessage } from '../../api/client';
 import { useLogout, useMe } from '../../api/hooks/useAuth';
 import { QuickAddProvider, useQuickAdd } from '../../context/QuickAddContext';
 import { useToast } from '../../context/ToastContext';
 import { LevelBadge } from '../common/LevelBadge';
+import { Modal } from '../common/Modal';
 import { QuickAddModal } from '../transactions/QuickAddModal';
 
-const NAV_ITEMS = [
-  { to: '/dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard },
-  { to: '/transactions', label: 'Riwayat Transaksi', shortLabel: 'Transaksi', icon: ListOrdered },
-  { to: '/accounts', label: 'Akun & Kategori', shortLabel: 'Akun', icon: Wallet },
-  { to: '/settings', label: 'Pengaturan', shortLabel: 'Setelan', icon: Settings },
+const DAILY_NAV_ITEMS = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/transactions', label: 'Riwayat Transaksi', icon: ListOrdered },
+  { to: '/budgets', label: 'Anggaran', icon: PieChart },
+] as const;
+
+const STRATEGY_NAV_ITEMS = [
+  { to: '/debts', label: 'Bebas Utang', icon: CreditCard },
+  { to: '/fire', label: 'Kalkulator FIRE', icon: Flame },
+  { to: '/net-worth', label: 'Neraca & Laporan', icon: Landmark },
+  { to: '/accounts', label: 'Akun & Kategori', icon: Wallet },
+  { to: '/settings', label: 'Pengaturan', icon: Settings },
+] as const;
+
+const MOBILE_PRIMARY_TABS = [
+  { to: '/dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard },
+  { to: '/transactions', shortLabel: 'Transaksi', icon: ListOrdered },
+  { to: '/budgets', shortLabel: 'Anggaran', icon: PieChart },
+  { to: '/debts', shortLabel: 'Utang', icon: CreditCard },
+] as const;
+
+const MOBILE_MORE_ITEMS = [
+  {
+    to: '/fire',
+    label: 'Kalkulator SWR & FIRE (L5–L7)',
+    description: 'Simulasi waktu kebebasan finansial & imbal hasil riil',
+    icon: Flame,
+  },
+  {
+    to: '/net-worth',
+    label: 'Neraca, Snapshot & Laporan PDF',
+    description: 'Tutup buku bulanan, tren Net Worth, & unduh PDF A4',
+    icon: Landmark,
+  },
+  {
+    to: '/accounts',
+    label: 'Akun Aset & Kategori',
+    description: 'Kelola dompet, bank, investasi, dan kategori kustom',
+    icon: Wallet,
+  },
+  {
+    to: '/settings',
+    label: 'Pengaturan & Parameter',
+    description: 'Profil, pengeluaran pokok dasar, dan asumsi SWR/Inflasi',
+    icon: Settings,
+  },
 ] as const;
 
 function AppLayoutShell() {
@@ -28,6 +76,11 @@ function AppLayoutShell() {
   const { openQuickAdd } = useQuickAdd();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+
+  const isOnMoreRoute = MOBILE_MORE_ITEMS.some((item) => location.pathname.startsWith(item.to));
 
   const handleLogout = async () => {
     try {
@@ -69,26 +122,60 @@ function AppLayoutShell() {
           </button>
         </div>
 
-        <nav aria-label="Menu Utama" className="mt-4 flex-1 space-y-1 px-3">
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
-                    isActive
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`
-                }
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span>{item.label}</span>
-              </NavLink>
-            );
-          })}
+        <nav aria-label="Menu Utama" className="mt-4 flex-1 space-y-5 overflow-y-auto px-3">
+          {/* Group 1: Harian */}
+          <div>
+            <p className="mb-1.5 px-3.5 text-[10px] font-bold tracking-wider text-slate-400 uppercase">Harian</p>
+            <div className="space-y-1">
+              {DAILY_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
+                        isActive
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Group 2: Strategi & Aset */}
+          <div>
+            <p className="mb-1.5 px-3.5 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+              Strategi &amp; Aset
+            </p>
+            <div className="space-y-1">
+              {STRATEGY_NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${
+                        isActive
+                          ? 'bg-indigo-50 text-indigo-700'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
         </nav>
 
         {user && (
@@ -155,12 +242,12 @@ function AppLayoutShell() {
         <Plus className="h-6 w-6" />
       </button>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile 5-Slot Bottom Navigation */}
       <nav
         aria-label="Navigasi Bawah"
-        className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-slate-200 bg-white/95 px-2 py-1.5 backdrop-blur-xs lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-2 py-1.5 backdrop-blur-xs lg:hidden"
       >
-        {NAV_ITEMS.map((item) => {
+        {MOBILE_PRIMARY_TABS.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
@@ -177,7 +264,60 @@ function AppLayoutShell() {
             </NavLink>
           );
         })}
+
+        <button
+          type="button"
+          onClick={() => setIsMoreOpen(true)}
+          className={`flex flex-col items-center justify-center gap-1 rounded-xl py-1.5 text-[11px] font-semibold transition ${
+            isOnMoreRoute || isMoreOpen ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+          <span>Lainnya</span>
+        </button>
       </nav>
+
+      {/* Mobile "Lainnya" Bottom Drawer Modal */}
+      <Modal
+        isOpen={isMoreOpen}
+        onClose={() => setIsMoreOpen(false)}
+        title="Menu Strategi & Aset"
+        subtitle="Akses Kalkulator FIRE, Neraca & Laporan PDF, Akun Aset, serta Pengaturan."
+      >
+        <div className="space-y-2.5">
+          {MOBILE_MORE_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = location.pathname.startsWith(item.to);
+            return (
+              <button
+                key={item.to}
+                type="button"
+                onClick={() => {
+                  setIsMoreOpen(false);
+                  void navigate(item.to);
+                }}
+                className={`flex w-full items-center gap-3.5 rounded-2xl border p-3.5 text-left transition ${
+                  active
+                    ? 'border-indigo-300 bg-indigo-50/80 text-indigo-900'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <div
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                    active ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900">{item.label}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{item.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Modal>
 
       {/* Global QuickAddModal */}
       <QuickAddModal />

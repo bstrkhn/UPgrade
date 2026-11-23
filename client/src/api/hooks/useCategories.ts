@@ -26,6 +26,8 @@ export function useCreateCategory() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.categories.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
     },
   });
 }
@@ -40,6 +42,8 @@ export function useDeleteCategory() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.categories.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
     },
   });
 }

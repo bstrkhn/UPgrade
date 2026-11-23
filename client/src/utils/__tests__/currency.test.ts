@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  allocateProportionalShare,
+  calculatePercentage,
   clampPercentBarWidth,
   compareMoney,
   finalizeMoneyInput,
@@ -56,6 +58,13 @@ describe('formatPercent', () => {
     expect(clampPercentBarWidth('36.00')).toBe('36.00');
     expect(clampPercentBarWidth('-15.00')).toBe('0.00');
     expect(clampPercentBarWidth('140.00')).toBe('100.00');
+  });
+
+  it('calculates percentages and proportional allocations via decimal.js', () => {
+    expect(calculatePercentage('150000', '500000')).toBe('30.00');
+    expect(calculatePercentage('150000', '0')).toBe('0.00');
+    expect(allocateProportionalShare('5000000', '0.50', 5)).toBe('500000');
+    expect(allocateProportionalShare('0', '0.50', 5)).toBe('0');
   });
 });
 

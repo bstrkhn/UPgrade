@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   ChevronLeft,
   ChevronRight,
+  Download,
   Landmark,
   Percent,
   PiggyBank,
@@ -16,14 +17,20 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { extractApiErrorMessage } from '../api/client';
 import { useAccounts, useCreateAccount } from '../api/hooks/useAccounts';
+import { useAnalyticsDashboard } from '../api/hooks/useAnalytics';
 import { useMe } from '../api/hooks/useAuth';
-import { useDashboardSummary } from '../api/hooks/useDashboard';
+import { downloadMonthlyPdf } from '../api/hooks/useReports';
 import { useTransactions } from '../api/hooks/useTransactions';
 import type { AccountType } from '../api/types';
 import { EmptyState } from '../components/common/EmptyState';
+import { ErrorBanner } from '../components/common/ErrorBanner';
 import { LevelBadge } from '../components/common/LevelBadge';
 import { Modal } from '../components/common/Modal';
 import { MoneyInput } from '../components/common/MoneyInput';
+import { EmergencyFundCard } from '../components/dashboard/EmergencyFundCard';
+import { LatteFactorCard } from '../components/dashboard/LatteFactorCard';
+import { LevelMissionsCard } from '../components/dashboard/LevelMissionsCard';
+import { MilestoneCard } from '../components/dashboard/MilestoneCard';
 import { TransactionRow } from '../components/transactions/TransactionRow';
 import { useQuickAdd } from '../context/QuickAddContext';
 import { useToast } from '../context/ToastContext';
@@ -47,7 +54,7 @@ export function DashboardPage() {
   const currentWibPeriod = getCurrentWibPeriod();
   const [period, setPeriod] = useState<Period>(currentWibPeriod);
 
-  const summaryQuery = useDashboardSummary(period.year, period.month);
+  const summaryQuery = useAnalyticsDashboard(period.year, period.month);
   const accountsQuery = useAccounts();
   const recentTxQuery = useTransactions({ page: 1, pageSize: 5 });
   const createAccountMutation = useCreateAccount();
@@ -57,6 +64,26 @@ export function DashboardPage() {
   const [newAccType, setNewAccType] = useState<AccountType>('BANK');
   const [newAccBalance, setNewAccBalance] = useState('0');
   const [newAccError, setNewAccError] = useState<string | null>(null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const handleDownloadPeriodPdf = async () => {
+    if (isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      const filename = await downloadMonthlyPdf(period.year, period.month);
+      showToast({
+        variant: 'success',
+        message: `Laporan PDF "${filename}" berhasil diunduh.`,
+      });
+    } catch (error) {
+      showToast({
+        variant: 'error',
+        message: extractApiErrorMessage(error, 'Gagal mengunduh laporan PDF bulanan.'),
+      });
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   const summary = summaryQuery.data;
   const accounts = accountsQuery.data ?? [];
@@ -145,17 +172,46 @@ export function DashboardPage() {
               Bulan Ini
             </button>
           )}
+
+          <button
+            type="button"
+            disabled={isDownloadingPdf}
+            onClick={() => void handleDownloadPeriodPdf()}
+            title={`Unduh Laporan PDF ${formatPeriodId(period)}`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-100 disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5 text-indigo-600" />
+            <span>{isDownloadingPdf ? 'Mengunduh...' : 'Unduh PDF'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Level Badge Banner */}
-      {user && (
-        <LevelBadge
-          level={user.currentLevel}
-          highestLevel={user.highestLevel}
-          healthStatus={user.healthStatus}
-          dataSourceBadge="Estimasi Awal"
+      {(summaryQuery.isError || accountsQuery.isError) && (
+        <ErrorBanner
+          message={extractApiErrorMessage(
+            summaryQuery.error ?? accountsQuery.error,
+            'Gagal memuat data analitik dashboard.',
+          )}
+          onRetry={() => {
+            void summaryQuery.refetch();
+            void accountsQuery.refetch();
+            void recentTxQuery.refetch();
+          }}
         />
+      )}
+
+      {/* Milestone Level Card (Dashboard v2) */}
+      {summary ? (
+        <MilestoneCard milestone={summary.milestone} dataSourceBadge={summary.emergencyFund.badge} />
+      ) : (
+        user && (
+          <LevelBadge
+            level={user.currentLevel}
+            highestLevel={user.highestLevel}
+            healthStatus={user.healthStatus}
+            dataSourceBadge="Estimasi Awal"
+          />
+        )
       )}
 
       {/* 3 Core KPI Cards */}
@@ -355,6 +411,31 @@ export function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* Phase 2 Analytics Grid: Dynamic Emergency Fund & Latte Factor Audit */}
+      {summaryQuery.isLoading ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+          <div className="h-64 animate-pulse rounded-2xl border border-slate-200 bg-white" />
+        </div>
+      ) : (
+        summary && (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <EmergencyFundCard emergencyFund={summary.emergencyFund} />
+            <LatteFactorCard latteFactor={summary.latteFactor} />
+          </div>
+        )
+      )}
+
+      {/* Level Missions & Dynamic To-Do Checklist */}
+      {summary && (
+        <LevelMissionsCard
+          userId={user?.id ?? ''}
+          currentLevel={summary.milestone.currentLevel}
+          healthStatus={summary.milestone.healthStatus}
+          missions={summary.milestone.missions}
+        />
+      )}
 
       {/* Account Balances Grid */}
       <section className="space-y-3">

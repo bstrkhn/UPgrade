@@ -81,7 +81,8 @@ export function useUpdatePreferences() {
     },
     onSuccess: (envelope) => {
       queryClient.setQueryData(queryKeys.auth.me, envelope.data.user);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
     },
   });
 }

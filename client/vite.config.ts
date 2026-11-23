@@ -9,7 +9,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    chunkSizeWarningLimit: 800,
+    chunkSizeWarningLimit: 1200,
   },
   test: {
     environment: 'node',

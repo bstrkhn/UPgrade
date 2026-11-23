@@ -24,7 +24,8 @@ export function useCreateAccount() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
     },
   });
 }
@@ -43,7 +44,8 @@ export function useUpdateAccount() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.analytics.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.budgets.all });
     },
   });
 }
