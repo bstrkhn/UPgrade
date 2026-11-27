@@ -37,7 +37,14 @@ import {
   formatRupiah,
   isNegativeMoney,
 } from '../utils/currency';
-import { formatPeriodId, getCurrentWibPeriod, monthNameId, shiftPeriod, type Period } from '../utils/date';
+import {
+  formatPeriodId,
+  getCurrentWibPeriod,
+  isSamePeriod,
+  monthNameId,
+  shiftPeriod,
+  type Period,
+} from '../utils/date';
 
 export function NetWorthPage() {
   const { showToast } = useToast();
@@ -376,6 +383,14 @@ export function NetWorthPage() {
             </button>
           </div>
         </div>
+
+        {!isSamePeriod(snapshotPeriod, currentWibPeriod) && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 px-4 py-2.5 text-xs text-indigo-900">
+            <strong>Catatan Transparansi Data:</strong> Total Aset &amp; Liabilitas diambil dari posisi saldo aktif saat
+            ini, sedangkan <em>Saving Rate</em> dihitung dari arus kas periode{' '}
+            <strong>{formatPeriodId(snapshotPeriod)}</strong>.
+          </div>
+        )}
 
         {snapshotsQuery.isLoading ? (
           <div className="h-64 animate-pulse rounded-2xl bg-slate-100" />

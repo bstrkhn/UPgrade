@@ -1,10 +1,9 @@
-import axios from 'axios';
 import { apiClient, extractApiErrorMessage } from '../client';
-import type { ApiErrorEnvelope } from '../types';
 
 /**
  * Downloads the monthly financial report PDF via Blob and triggers a browser file download.
- * If the server returns a JSON error envelope inside a Blob, extracts the Indonesian message.
+ * Any JSON error envelope inside a failed Blob response is automatically converted into
+ * an ApiClientError with its Bahasa Indonesia message by the response interceptor in client.ts.
  */
 export async function downloadMonthlyPdf(year: number, month: number): Promise<string> {
   try {
@@ -31,19 +30,6 @@ export async function downloadMonthlyPdf(year: number, month: number): Promise<s
 
     return filename;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-      try {
-        const text = await error.response.data.text();
-        const parsed = JSON.parse(text) as ApiErrorEnvelope;
-        if (parsed && typeof parsed.message === 'string' && parsed.message.length > 0) {
-          throw new Error(parsed.message);
-        }
-      } catch (parseErr) {
-        if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
-          throw parseErr;
-        }
-      }
-    }
     throw new Error(extractApiErrorMessage(error, 'Gagal mengunduh laporan PDF bulanan.'));
   }
 }

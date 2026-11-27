@@ -5,6 +5,7 @@ import { useAccounts, useCreateAccount, useUpdateAccount } from '../api/hooks/us
 import { useCategories, useCreateCategory, useDeleteCategory } from '../api/hooks/useCategories';
 import type { AccountType, CategoryKind, PublicAccount } from '../api/types';
 import { EmptyState } from '../components/common/EmptyState';
+import { ErrorBanner } from '../components/common/ErrorBanner';
 import { Modal } from '../components/common/Modal';
 import { MoneyInput } from '../components/common/MoneyInput';
 import { useToast } from '../context/ToastContext';
@@ -223,6 +224,19 @@ export function AccountsPage() {
             </button>
           </div>
         </div>
+
+        {(accountsQuery.isError || categoriesQuery.isError) && (
+          <ErrorBanner
+            message={extractApiErrorMessage(
+              accountsQuery.error ?? categoriesQuery.error,
+              'Gagal memuat daftar akun atau kategori.',
+            )}
+            onRetry={() => {
+              void accountsQuery.refetch();
+              void categoriesQuery.refetch();
+            }}
+          />
+        )}
 
         {accountsQuery.isLoading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

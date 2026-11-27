@@ -11,6 +11,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET minimal 32 karakter'),
   JWT_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(7),
+  COOKIE_SAMESITE: z.enum(['lax', 'none']).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

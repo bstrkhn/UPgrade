@@ -12,7 +12,7 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { extractApiErrorMessage } from '../../api/client';
 import { useLogout, useMe } from '../../api/hooks/useAuth';
@@ -79,6 +79,11 @@ function AppLayoutShell() {
   const location = useLocation();
 
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+
+  // Auto-close the mobile "Lainnya" drawer whenever the active route changes
+  useEffect(() => {
+    setIsMoreOpen(false);
+  }, [location.pathname]);
 
   const isOnMoreRoute = MOBILE_MORE_ITEMS.some((item) => location.pathname.startsWith(item.to));
 

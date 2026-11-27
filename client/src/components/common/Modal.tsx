@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,6 +18,9 @@ export function Modal({
   children,
   maxWidthClass = 'max-w-lg',
 }: ModalProps) {
+  const titleId = useId();
+  const subtitleId = useId();
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -43,7 +46,8 @@ export function Modal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="modal-title"
+      aria-labelledby={titleId}
+      aria-describedby={subtitle ? subtitleId : undefined}
       className="animate-fade-in fixed inset-0 z-40 flex items-end justify-center bg-slate-950/50 p-0 backdrop-blur-xs sm:items-center sm:p-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
@@ -56,10 +60,14 @@ export function Modal({
       >
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-xs">
           <div>
-            <h2 id="modal-title" className="text-lg font-bold text-slate-900">
+            <h2 id={titleId} className="text-lg font-bold text-slate-900">
               {title}
             </h2>
-            {subtitle && <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p>}
+            {subtitle && (
+              <p id={subtitleId} className="mt-0.5 text-xs text-slate-500">
+                {subtitle}
+              </p>
+            )}
           </div>
           <button
             type="button"

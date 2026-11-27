@@ -62,15 +62,33 @@ const AUTH_EXEMPT_401_PATHS = ['/auth/login', '/auth/register', '/auth/me'];
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: unknown) => {
+  async (error: unknown) => {
     if (axios.isAxiosError(error)) {
-      const axiosErr = error as AxiosError<ApiErrorEnvelope>;
+      const axiosErr = error as AxiosError<ApiErrorEnvelope | Blob>;
       const status = axiosErr.response?.status ?? 0;
       const requestUrl = axiosErr.config?.url ?? '';
       if (status === 401 && !AUTH_EXEMPT_401_PATHS.some((exempt) => requestUrl.endsWith(exempt))) {
         unauthorizedHandler?.();
       }
-      const issues = axiosErr.response?.data?.meta?.errors ?? [];
+
+      const rawData = axiosErr.response?.data;
+      if (typeof Blob !== 'undefined' && rawData instanceof Blob) {
+        try {
+          const text = await rawData.text();
+          const parsed = JSON.parse(text) as ApiErrorEnvelope;
+          const issues = parsed?.meta?.errors ?? [];
+          const firstIssue = issues[0]?.message;
+          const message =
+            (typeof firstIssue === 'string' && firstIssue.length > 0 ? firstIssue : parsed?.message) ||
+            'Terjadi kesalahan saat memproses dokumen dari server.';
+          return Promise.reject(new ApiClientError(message, status, issues));
+        } catch {
+          // Fall back to standard message extraction if the Blob is not JSON
+        }
+      }
+
+      const envelope = rawData && !(rawData instanceof Blob) ? rawData : undefined;
+      const issues = envelope?.meta?.errors ?? [];
       const message = extractApiErrorMessage(axiosErr);
       return Promise.reject(new ApiClientError(message, status, issues));
     }

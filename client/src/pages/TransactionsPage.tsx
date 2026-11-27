@@ -1,10 +1,12 @@
 import { ChevronLeft, ChevronRight, Filter, Plus, ReceiptText, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { extractApiErrorMessage } from '../api/client';
 import { useAccounts } from '../api/hooks/useAccounts';
 import { useCategories } from '../api/hooks/useCategories';
 import { useTransactions } from '../api/hooks/useTransactions';
 import type { TransactionType } from '../api/types';
 import { EmptyState } from '../components/common/EmptyState';
+import { ErrorBanner } from '../components/common/ErrorBanner';
 import { TransactionRow } from '../components/transactions/TransactionRow';
 import { useQuickAdd } from '../context/QuickAddContext';
 
@@ -202,6 +204,13 @@ export function TransactionsPage() {
           </p>
         )}
       </div>
+
+      {transactionsQuery.isError && (
+        <ErrorBanner
+          message={extractApiErrorMessage(transactionsQuery.error, 'Gagal memuat riwayat transaksi.')}
+          onRetry={() => void transactionsQuery.refetch()}
+        />
+      )}
 
       {/* Transaction List */}
       {transactionsQuery.isLoading ? (

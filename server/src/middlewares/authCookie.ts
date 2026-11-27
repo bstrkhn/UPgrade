@@ -7,12 +7,17 @@ export const AUTH_COOKIE_NAME = 'upgrade_token';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-/** HttpOnly cookie. SameSite=Lax locally, SameSite=None; Secure in cross-domain production. */
+/**
+ * HttpOnly cookie options:
+ * Defaults to SameSite=Lax locally and SameSite=None; Secure in cross-domain production,
+ * or respects explicit COOKIE_SAMESITE ('lax' | 'none') when configured (e.g. behind a Vercel /api/* proxy).
+ */
 function baseCookieOptions(): CookieOptions {
+  const sameSite = env.COOKIE_SAMESITE ?? (isProduction ? 'none' : 'lax');
   return {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction || sameSite === 'none',
+    sameSite,
     path: '/',
   };
 }

@@ -5,8 +5,10 @@ import helmet from 'helmet';
 import './config/zod.js';
 import { corsOptions } from './config/cors.js';
 import { isProduction } from './config/env.js';
+import { prisma } from './config/prisma.js';
 import { authCookie } from './middlewares/authCookie.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
+import { apiRateLimiter } from './middlewares/rateLimiter.js';
 import { accountsRouter } from './modules/accounts/accounts.routes.js';
 import { analyticsRouter } from './modules/analytics/analytics.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
@@ -32,9 +34,37 @@ export function createApp(): Express {
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
+  // Lightweight liveness probe (no database query, excluded from apiRateLimiter)
   app.get('/api/v1/health', (_req, res) => {
-    res.json({ success: true, message: 'UPgrade API berjalan dengan baik.', data: { status: 'ok' }, meta: {} });
+    res.json({
+      success: true,
+      message: 'UPgrade API berjalan dengan baik.',
+      data: { status: 'ok' },
+      meta: {},
+    });
   });
+
+  // Database readiness probe for production health checks (Neon / Supabase)
+  app.get('/api/v1/health/ready', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.status(200).json({
+        success: true,
+        message: 'Database UPgrade terhubung dan siap melayani permintaan.',
+        data: { status: 'ready', database: 'connected' },
+        meta: {},
+      });
+    } catch {
+      res.status(503).json({
+        success: false,
+        message: 'Layanan belum siap: koneksi database sedang bermasalah.',
+        data: { status: 'unavailable', database: 'disconnected' },
+        meta: {},
+      });
+    }
+  });
+
+  app.use('/api/v1', apiRateLimiter);
 
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/onboarding', authCookie, onboardingRouter);
